@@ -2,8 +2,6 @@ import { supabase } from '../supabase';
 import { Order, OrderItem } from '@/types';
 
 export const createOrder = async (orderData: Partial<Order>, items: Partial<OrderItem>[]) => {
-  if (!supabase) throw new Error('Supabase not configured');
-
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .insert([orderData])
@@ -31,8 +29,6 @@ export const createOrder = async (orderData: Partial<Order>, items: Partial<Orde
 };
 
 export const getBuyerOrders = async (buyerId: string): Promise<Order[]> => {
-  if (!supabase) return [];
-
   const { data, error } = await supabase
     .from('orders')
     .select('*, items:order_items(*, product:products(*))')
@@ -44,8 +40,6 @@ export const getBuyerOrders = async (buyerId: string): Promise<Order[]> => {
 };
 
 export const getSellerOrders = async (sellerId: string): Promise<Order[]> => {
-  if (!supabase) return [];
-
   const { data, error } = await supabase
     .from('orders')
     .select('*, items:order_items(*, product:products(*))')
@@ -57,8 +51,6 @@ export const getSellerOrders = async (sellerId: string): Promise<Order[]> => {
 };
 
 export const updateOrderStatus = async (orderId: string, status: string) => {
-  if (!supabase) return;
-
   const { error } = await supabase
     .from('orders')
     .update({ status })

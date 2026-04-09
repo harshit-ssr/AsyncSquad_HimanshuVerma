@@ -1,8 +1,6 @@
 import { supabase } from '../supabase';
 
 export const getCurrentUser = async () => {
-  if (!supabase) return null;
-
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error || !session) return null;
 
@@ -16,6 +14,5 @@ export const getCurrentUser = async () => {
 };
 
 export const signOut = async () => {
-  if (!supabase) return;
   await supabase.auth.signOut();
 };

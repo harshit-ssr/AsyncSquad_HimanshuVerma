@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "@/lib/authStore";
+import { useOrderStore } from "@/lib/orderStore";
 import { useRouter } from "next/navigation";
 import { ShoppingBag, Clock, CheckCircle, XCircle } from "lucide-react";
 import Link from "next/link";
-
-import { useOrderStore } from "@/lib/orderStore";
 
 const STATUS_MAP = {
   pending:    { label: "Pending",    Icon: Clock,         bg: "#FBE9E2", color: "#9A4A2C" },
@@ -17,16 +16,21 @@ const STATUS_MAP = {
 
 export default function BuyerOrdersPage() {
   const { user } = useAuthStore();
-  const { orders } = useOrderStore();
+  const { orders, fetchOrders } = useOrderStore();
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useRef(false);
 
   useEffect(() => {
-    setMounted(true);
-    if (mounted && !user) router.push("/login");
-  }, [user, router, mounted]);
+    mounted.current = true;
+  }, []);
 
-  if (!mounted) return null;
+  useEffect(() => {
+    if (!mounted.current) return;
+    if (!user) { router.push("/login"); return; }
+    fetchOrders(user.id);
+  }, [user, router, fetchOrders]);
+
+  if (!mounted.current) return null;
 
   if (!user) {
     return (
@@ -61,7 +65,7 @@ export default function BuyerOrdersPage() {
               <div key={order.id} className="step-card p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-5" style={{ borderBottom: "1px solid #E5E5EE" }}>
                   <div>
-                    <p className="font-bold text-sm" style={{ color: "#111118" }}>{order.id}</p>
+                    <p className="font-bold text-sm" style={{ color: "#111118" }}>#{order.id.slice(0, 8)}</p>
                     <p className="text-xs mt-0.5" style={{ color: "#9E8B7D" }}>Placed on {order.date}</p>
                   </div>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{ backgroundColor: bg, color }}>

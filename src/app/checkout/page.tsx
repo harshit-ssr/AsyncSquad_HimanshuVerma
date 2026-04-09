@@ -12,27 +12,55 @@ export default function CheckoutPage() {
   const { user } = useAuthStore();
   const { addOrder } = useOrderStore();
   const [placed, setPlaced] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleCheckout = async () => {
+    if (loading) return;
     if (!user) {
       router.push("/login");
       return;
     }
     if (user.role === "seller") return;
-    
-    // Save to local test store
-    addOrder({
-      buyer_id: user.id,
-      total: getTotal(),
-      items: items.map(i => ({ title: i.title, qty: i.cartQuantity, price: i.price }))
-    });
 
-    setPlaced(true);
-    setTimeout(() => {
+    setError("");
+    setLoading(true);
+
+    try {
+      // Group items by seller — use first item's seller_id
+      // (In a full app you'd split by seller, but for MVP assume single seller per order)
+      const sellerId = items[0]?.seller_id;
+
+      if (!sellerId) {
+        setError("Unable to determine the seller for this order.");
+        setLoading(false);
+        return;
+      }
+
+      await addOrder({
+        buyer_id: user.id,
+        seller_id: sellerId,
+        total: getTotal(),
+        items: items.map(i => ({
+          title: i.title,
+          qty: i.cartQuantity,
+          price: i.price,
+          product_id: i.id,
+        })),
+      });
+
+      setPlaced(true);
       clearCart();
-      router.push("/buyer/orders");
-    }, 3000);
+      setTimeout(() => {
+        router.push("/buyer/orders");
+      }, 3000);
+    } catch (e) {
+      console.error("Checkout failed:", e);
+      setError("Failed to place order. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (placed) {
@@ -43,7 +71,7 @@ export default function CheckoutPage() {
         </div>
         <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Order Confirmed!</h2>
         <p className="text-gray-500 text-lg text-center">Thank you for supporting sustainable artisans.</p>
-        <p className="text-gray-400 mt-4 text-sm animate-pulse">Redirecting to explore...</p>
+        <p className="text-gray-400 mt-4 text-sm animate-pulse">Redirecting to your orders...</p>
       </div>
     );
   }
@@ -84,13 +112,14 @@ export default function CheckoutPage() {
       <div className="flex flex-col md:flex-row gap-8 lg:gap-12">
         <div className="md:w-2/3 bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/40">
           <h2 className="text-xl font-bold mb-6 text-gray-900 flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-green-600" /> Order Summary (Demo)
+            <CreditCard className="w-5 h-5 text-green-600" /> Order Summary
           </h2>
           <div className="space-y-1 divide-y divide-gray-50">
             {items.map((item) => (
               <div key={item.id} className="flex items-center justify-between py-4 group">
                 <div className="flex items-center gap-4">
                   {item.image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={item.image_url} alt={item.title} className="w-16 h-16 object-cover rounded-xl" />
                   )}
                   <div>
@@ -130,14 +159,22 @@ export default function CheckoutPage() {
                 <p className="text-xs text-gray-400 mt-0.5">incl. GST</p>
               </div>
             </div>
+
+            {error && (
+              <div className="rounded-lg p-3 mb-4 text-sm font-medium" style={{ backgroundColor: "#FBE9E2", color: "#9A4A2C" }}>
+                {error}
+              </div>
+            )}
+
             <button
               onClick={handleCheckout}
-              className="w-full mt-4 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold text-lg transition-all active:scale-95 shadow-xl shadow-green-600/20"
+              disabled={loading}
+              className="w-full mt-4 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold text-lg transition-all active:scale-95 shadow-xl shadow-green-600/20 disabled:opacity-60 disabled:cursor-wait"
             >
-              Place Order
+              {loading ? "Placing Order..." : "Place Order"}
             </button>
             <p className="text-xs text-center text-gray-400 mt-4 leading-relaxed">
-              This is a demo. No real payment will be processed.
+              Your order will be saved to the database.
             </p>
           </div>
         </div>

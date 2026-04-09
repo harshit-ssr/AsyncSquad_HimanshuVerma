@@ -1,19 +1,14 @@
 "use client";
 
-import { Package, TrendingUp, Users, IndianRupee, Plus, ChevronRight, Clock } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Package, TrendingUp, IndianRupee, Plus, ChevronRight, Clock, Users, Loader2, Pencil, XCircle } from "lucide-react";
 import Link from "next/link";
-
-const MOCK_PRODUCTS = [
-  { id: "p1", title: "Upcycled Denim Tote Bag", price: 2999, stock: 10, image: "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop" },
-  { id: "p2", title: "Bamboo Toothbrush Pack", price: 499, stock: 50, image: "https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?q=80&w=100&auto=format&fit=crop" },
-  { id: "p6", title: "Khadi Cotton Kurta", price: 1799, stock: 15, image: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=100&auto=format&fit=crop" },
-];
-
-const MOCK_ORDERS = [
-  { id: "#ORD-1092", item: "Bamboo Toothbrush (×2)", total: 998, status: "pending" },
-  { id: "#ORD-1091", item: "Upcycled Denim Tote (×1)", total: 2999, status: "processing" },
-  { id: "#ORD-1090", item: "Khadi Cotton Tote (×3)", total: 3597, status: "completed" },
-];
+import { useAuthStore } from "@/lib/authStore";
+import { getProductsBySeller } from "@/lib/services/products";
+import { getSellerOrders } from "@/lib/services/orders";
+import { updateOrderStatus } from "@/lib/services/orders";
+import { Product, Order }  from "@/types";
+import { useRouter } from "next/navigation";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-yellow-50 text-yellow-700 border border-yellow-200",
@@ -23,6 +18,46 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function SellerDashboard() {
+  const { user } = useAuthStore();
+  const router = useRouter();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const mounted = useRef(false);
+
+  useEffect(() => { mounted.current = true; }, []);
+
+  useEffect(() => {
+    if (!mounted.current) return;
+    if (!user) { router.push("/login"); return; }
+    if (user.role !== "seller" && user.role !== "admin") { router.push("/buyer"); return; }
+
+    getProductsBySeller(user.id).then(setProducts).catch(console.error);
+    getSellerOrders(user.id).then(setOrders).catch(console.error);
+   
+  }, [user, router]);
+
+  if (!mounted.current) return null;
+
+  const totalRevenue = orders
+    .filter(o => o.status === "completed")
+    .reduce((acc, o) => acc + Number(o.total_amount), 0);
+
+  const pendingCount = orders.filter(o => o.status === "pending").length;
+
+  const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingOrderId(orderId);
+    try {
+      await updateOrderStatus(orderId, newStatus);
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as Order["status"] } : o));
+    } catch (e) {
+      console.error("Failed to update order:", e);
+      alert(`Failed to update order status. Please try again.`);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
   return (
     <div className="py-8 animate-in fade-in max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
@@ -40,10 +75,10 @@ export default function SellerDashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         {[
-          { label: "Total Revenue", value: "₹1,24,050", icon: IndianRupee, color: "text-green-600", bg: "bg-green-50" },
-          { label: "Active Products", value: "12", icon: Package, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Pending Orders", value: "3", icon: Clock, color: "text-orange-600", bg: "bg-orange-50" },
-          { label: "Store Views", value: "842", icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "Total Revenue", value: `₹${totalRevenue.toLocaleString("en-IN")}`, icon: IndianRupee, color: "text-green-600", bg: "bg-green-50" },
+          { label: "Active Products", value: String(products.length), icon: Package, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Pending Orders", value: String(pendingCount), icon: Clock, color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Total Orders", value: String(orders.length), icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-50" },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
             <div className={`w-10 h-10 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center mb-3`}>
@@ -67,25 +102,34 @@ export default function SellerDashboard() {
               </Link>
             </div>
             <div className="divide-y divide-gray-50">
-              {MOCK_PRODUCTS.map((p) => (
-                <div key={p.id} className="flex items-center gap-4 p-4 hover:bg-gray-50/50 transition group">
-                  <img src={p.image} alt={p.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-gray-100" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">{p.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{p.stock} in stock</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <span className="font-bold text-gray-900 text-sm">₹{p.price.toLocaleString("en-IN")}</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-gray-500 transition" />
-                </div>
-              ))}
+              {products.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 text-sm">No products yet. Add your first product!</div>
+              ) : (
+                products.slice(0, 5).map((p) => (
+                  <Link key={p.id} href={`/seller/products/${p.id}/edit`} className="flex items-center gap-4 p-4 hover:bg-gray-50/50 transition group cursor-pointer">
+                    {p.image_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.image_url} alt={p.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-gray-100" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm truncate">{p.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{p.stock_quantity} in stock</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className="font-bold text-gray-900 text-sm">₹{Number(p.price).toLocaleString("en-IN")}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-gray-500 transition" />
+                  </Link>
+                ))
+              )}
             </div>
-            <div className="p-4 border-t border-gray-50">
-              <button className="w-full text-center text-sm text-green-600 font-semibold hover:text-green-700 transition py-1">
-                View all 12 products →
-              </button>
-            </div>
+            {products.length > 5 && (
+              <div className="p-4 border-t border-gray-50">
+                <Link href="/seller/products" className="block w-full text-center text-sm text-green-600 font-semibold hover:text-green-700 transition py-1">
+                  View all {products.length} products →
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
@@ -96,64 +140,97 @@ export default function SellerDashboard() {
                 <Users className="w-5 h-5 text-orange-500" /> Recent Orders
               </h2>
               <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full">
-                {MOCK_ORDERS.filter(o => o.status === "pending").length} pending
+                {pendingCount} pending
               </span>
             </div>
 
-            <div className="sm:hidden divide-y divide-gray-50">
-              {MOCK_ORDERS.map((order) => (
-                <div key={order.id} className="p-4 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <p className="font-bold text-gray-900 text-sm">{order.id}</p>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${STATUS_STYLES[order.status]}`}>
-                      {order.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600">{order.item}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-900">₹{order.total.toLocaleString("en-IN")}</span>
-                    {order.status !== "completed" && (
-                      <button className="text-xs text-green-600 font-bold hover:underline">Update Status →</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-gray-50/50 border-b border-gray-50 text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  <tr>
-                    <th className="px-6 py-4">Order</th>
-                    <th className="px-6 py-4">Item</th>
-                    <th className="px-6 py-4">Total</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {MOCK_ORDERS.map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50/30 transition">
-                      <td className="px-6 py-4 font-bold text-gray-900 text-sm">{order.id}</td>
-                      <td className="px-6 py-4 text-gray-600 text-sm max-w-[200px] truncate">{order.item}</td>
-                      <td className="px-6 py-4 font-bold text-gray-900">₹{order.total.toLocaleString("en-IN")}</td>
-                      <td className="px-6 py-4">
+            {orders.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-sm">No orders yet.</div>
+            ) : (
+              <>
+                <div className="sm:hidden divide-y divide-gray-50">
+                  {orders.slice(0, 5).map((order) => (
+                    <div key={order.id} className="p-4 space-y-2">
+                      <div className="flex justify-between items-start">
+                        <p className="font-bold text-gray-900 text-sm">#{order.id.slice(0, 8)}</p>
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${STATUS_STYLES[order.status]}`}>
                           {order.status}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {order.status !== "completed" ? (
-                          <button className="text-green-600 font-bold text-sm hover:underline">Update</button>
-                        ) : (
-                          <span className="text-gray-300 text-sm font-bold">Done ✓</span>
-                        )}
-                      </td>
-                    </tr>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        {order.items?.map(i => `${i.product?.title ?? "Product"} (×${i.quantity})`).join(", ")}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-gray-900">₹{Number(order.total_amount).toLocaleString("en-IN")}</span>
+                        <div className="flex items-center gap-2">
+                          {updatingOrderId === order.id ? (
+                            <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                          ) : (
+                            <>
+                              {order.status === "pending" && (
+                                <>
+                                  <button onClick={() => handleUpdateStatus(order.id, "processing")} className="text-xs text-green-600 font-bold hover:underline">Process →</button>
+                                  <button onClick={() => handleUpdateStatus(order.id, "cancelled")} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
+                                </>
+                              )}
+                              {order.status === "processing" && (
+                                <button onClick={() => handleUpdateStatus(order.id, "completed")} className="text-xs text-green-600 font-bold hover:underline">Complete →</button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50/50 border-b border-gray-50 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-4">Order</th>
+                        <th className="px-6 py-4">Items</th>
+                        <th className="px-6 py-4">Total</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {orders.slice(0, 10).map((order) => (
+                        <tr key={order.id} className="hover:bg-gray-50/30 transition">
+                          <td className="px-6 py-4 font-bold text-gray-900 text-sm">#{order.id.slice(0, 8)}</td>
+                          <td className="px-6 py-4 text-gray-600 text-sm max-w-[200px] truncate">
+                            {order.items?.map(i => `${i.product?.title ?? "Product"} (×${i.quantity})`).join(", ")}
+                          </td>
+                          <td className="px-6 py-4 font-bold text-gray-900">₹{Number(order.total_amount).toLocaleString("en-IN")}</td>
+                          <td className="px-6 py-4">
+                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${STATUS_STYLES[order.status]}`}>
+                              {order.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {updatingOrderId === order.id ? (
+                              <Loader2 className="w-4 h-4 text-green-600 animate-spin inline-block" />
+                            ) : order.status === "pending" ? (
+                              <div className="flex items-center justify-end gap-3">
+                                <button onClick={() => handleUpdateStatus(order.id, "processing")} className="text-green-600 font-bold text-sm hover:underline">Process</button>
+                                <button onClick={() => handleUpdateStatus(order.id, "cancelled")} className="text-red-500 font-bold text-sm hover:underline">Cancel</button>
+                              </div>
+                            ) : order.status === "processing" ? (
+                              <button onClick={() => handleUpdateStatus(order.id, "completed")} className="text-green-600 font-bold text-sm hover:underline">Complete</button>
+                            ) : order.status === "cancelled" ? (
+                              <span className="text-red-400 text-sm font-bold">Cancelled ✕</span>
+                            ) : (
+                              <span className="text-gray-300 text-sm font-bold">Done ✓</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

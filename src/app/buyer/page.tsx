@@ -37,7 +37,7 @@ const ECO_COLORS: Record<string, { bg: string; text: string }> = {
 function tagStyle(tag: string) { return ECO_COLORS[tag.toLowerCase()] ?? ECO_COLORS.default; }
 
 export default function BuyerDashboard() {
-  const { products, fetchFromDB } = useProductStore();
+  const { products, fetchFromDB, usingMock } = useProductStore();
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [view, setView] = useState<"grid" | "map">("grid");
   const [search, setSearch] = useState("");
@@ -84,6 +84,12 @@ export default function BuyerDashboard() {
         </p>
       </div>
 
+      {usingMock && (
+        <div className="mb-6 rounded-lg p-3 text-sm font-medium" style={{ backgroundColor: "#FBE9E2", color: "#9A4A2C" }}>
+          Notice: Unable to connect to database. Showing temporary offline products.
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3 mb-6 sm:mb-8">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "#9E8B7D" }} />
@@ -129,9 +135,24 @@ export default function BuyerDashboard() {
       {view === "grid" && (
         filtered.length === 0 ? (
           <div className="text-center py-24">
-            <p className="text-5xl mb-4">🌿</p>
-            <h3 className="font-serif text-2xl font-bold" style={{ color: "#252535" }}>Nothing found</h3>
-            <p className="mt-2" style={{ color: "#9E8B7D" }}>Try a different search term.</p>
+            <p className="text-5xl mb-4">{products.length === 0 ? "🌱" : "🌿"}</p>
+            <h3 className="font-serif text-2xl font-bold" style={{ color: "#252535" }}>
+              {products.length === 0 ? "The shelves are empty — for now" : "Nothing found"}
+            </h3>
+            <p className="mt-2 max-w-md mx-auto" style={{ color: "#9E8B7D" }}>
+              {products.length === 0
+                ? "No products have been listed yet. Check back soon — local artisans are setting up shop!"
+                : "Try a different search term or browse all products."}
+            </p>
+            {search.trim() && (
+              <button
+                onClick={() => setSearch("")}
+                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition"
+                style={{ backgroundColor: "#252535", color: "#FFFFFF" }}
+              >
+                Clear Search
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">

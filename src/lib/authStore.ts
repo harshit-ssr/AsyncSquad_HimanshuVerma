@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase } from './supabase';
 import type { Role } from '@/types';
 
 export interface AuthUser {
@@ -10,75 +10,43 @@ export interface AuthUser {
   name: string;
 }
 
-const DEMO_USERS: Array<AuthUser & { password: string }> = [
-  { id: 'demo-buyer-1', email: 'buyer@demo.com', password: 'demo123', role: 'buyer', name: 'Priya Sharma' },
-  { id: 'demo-seller-1', email: 'seller@demo.com', password: 'demo123', role: 'seller', name: 'Ravi Kumar' },
-  { id: 'demo-admin-1', email: 'admin@demo.com', password: 'demo123', role: 'admin', name: 'Admin' },
-];
-
-const LOCAL_USERS_KEY = 'ecomarket_registered_users';
-
-function getLocalUsers(): Array<AuthUser & { password: string }> {
-  if (typeof window === 'undefined') return DEMO_USERS;
-  try {
-    const stored = localStorage.getItem(LOCAL_USERS_KEY);
-    const extra: Array<AuthUser & { password: string }> = stored ? JSON.parse(stored) : [];
-    return [...DEMO_USERS, ...extra];
-  } catch {
-    return DEMO_USERS;
-  }
-}
-
-function saveLocalUser(user: AuthUser & { password: string }) {
-  if (typeof window === 'undefined') return;
-  try {
-    const stored = localStorage.getItem(LOCAL_USERS_KEY);
-    const extra: Array<AuthUser & { password: string }> = stored ? JSON.parse(stored) : [];
-    extra.push(user);
-    localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(extra));
-  } catch { /* ignore */ }
-}
-
 interface AuthStore {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ error?: string }>;
+  initialized: boolean;
+  login: (email: string, password: string) => Promise<{ error?: string; role?: Role }>;
   signup: (name: string, email: string, password: string, role: 'buyer' | 'seller') => Promise<{ error?: string }>;
   logout: () => Promise<void>;
+  initializeAuth: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isLoading: false,
+      initialized: false,
 
       login: async (email, password) => {
         set({ isLoading: true });
         try {
-          if (isSupabaseConfigured && supabase) {
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-            if (error) { set({ isLoading: false }); return { error: error.message }; }
-            if (data.user) {
-              const { data: profile } = await supabase
-                .from('profiles').select('*').eq('id', data.user.id).single();
-              const user: AuthUser = {
-                id: data.user.id,
-                email: data.user.email!,
-                role: profile?.role ?? 'buyer',
-                name: profile?.name ?? email.split('@')[0],
-              };
-              set({ user, isLoading: false });
-              return {};
-            }
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) { set({ isLoading: false }); return { error: error.message }; }
+          if (data.user) {
+            const { data: profile } = await supabase
+              .from('profiles').select('*').eq('id', data.user.id).single();
+            const role: Role = profile?.role ?? 'buyer';
+            const user: AuthUser = {
+              id: data.user.id,
+              email: data.user.email!,
+              role,
+              name: profile?.name ?? email.split('@')[0],
+            };
+            set({ user, isLoading: false });
+            return { role };
           }
-
-          const found = getLocalUsers().find(u => u.email === email && u.password === password);
-          if (!found) { set({ isLoading: false }); return { error: 'Invalid email or password.' }; }
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { password: _pw, ...user } = found;
-          set({ user, isLoading: false });
-          return {};
+          set({ isLoading: false });
+          return { error: 'Login failed. Please try again.' };
         } catch {
           set({ isLoading: false });
           return { error: 'Something went wrong. Please try again.' };
@@ -88,32 +56,24 @@ export const useAuthStore = create<AuthStore>()(
       signup: async (name, email, password, role) => {
         set({ isLoading: true });
         try {
-          if (isSupabaseConfigured && supabase) {
-            const { data, error } = await supabase.auth.signUp({
-              email, password,
-              options: { data: { role, name } },
-            });
-            if (error) { set({ isLoading: false }); return { error: error.message }; }
-            if (data.user) {
-              await supabase.from('profiles').upsert({ id: data.user.id, email, role, name });
-              const user: AuthUser = { id: data.user.id, email, role, name };
-              set({ user, isLoading: false });
-              return {};
+          const { data, error } = await supabase.auth.signUp({
+            email, password,
+            options: { data: { role, name } },
+          });
+          if (error) { set({ isLoading: false }); return { error: error.message }; }
+          if (data.user) {
+            // The trigger on auth.users will auto-create the profile + seller row.
+            // Upsert as a safety net in case the trigger hasn't fired yet.
+            await supabase.from('profiles').upsert({ id: data.user.id, email, role, name });
+            if (role === 'seller') {
+              await supabase.from('sellers').upsert({ id: data.user.id, store_name: name + "'s Store" });
             }
+            const user: AuthUser = { id: data.user.id, email, role, name };
+            set({ user, isLoading: false });
+            return {};
           }
-
-          if (getLocalUsers().find(u => u.email === email)) {
-            set({ isLoading: false });
-            return { error: 'An account with this email already exists.' };
-          }
-          const newUser: AuthUser & { password: string } = {
-            id: `local-${Date.now()}`, email, password, role, name,
-          };
-          saveLocalUser(newUser);
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { password: _pw, ...user } = newUser;
-          set({ user, isLoading: false });
-          return {};
+          set({ isLoading: false });
+          return { error: 'Signup failed. Please try again.' };
         } catch {
           set({ isLoading: false });
           return { error: 'Something went wrong. Please try again.' };
@@ -121,8 +81,57 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: async () => {
-        if (isSupabaseConfigured && supabase) await supabase.auth.signOut();
+        await supabase.auth.signOut();
         set({ user: null });
+        const { useOrderStore } = await import('./orderStore');
+        useOrderStore.getState().clearOrders();
+      },
+
+      initializeAuth: async () => {
+        if (get().initialized) return;
+
+        try {
+          // Restore session from Supabase on app load
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const { data: profile } = await supabase
+              .from('profiles').select('*').eq('id', session.user.id).single();
+            set({
+              user: {
+                id: session.user.id,
+                email: session.user.email!,
+                role: profile?.role ?? 'buyer',
+                name: profile?.name ?? session.user.email!.split('@')[0],
+              },
+              initialized: true,
+            });
+          } else {
+            set({ user: null, initialized: true });
+          }
+        } catch {
+          set({ initialized: true });
+        }
+
+        // Listen for future auth state changes (login/logout from other tabs, token refresh)
+        supabase.auth.onAuthStateChange(async (event, session) => {
+          if (event === 'SIGNED_OUT' || !session?.user) {
+            set({ user: null });
+            return;
+          }
+
+          if (['SIGNED_IN', 'TOKEN_REFRESHED', 'INITIAL_SESSION'].includes(event)) {
+            const { data: profile } = await supabase
+              .from('profiles').select('*').eq('id', session.user.id).single();
+            set({
+              user: {
+                id: session.user.id,
+                email: session.user.email!,
+                role: profile?.role ?? 'buyer',
+                name: profile?.name ?? session.user.email!.split('@')[0],
+              },
+            });
+          }
+        });
       },
     }),
     {

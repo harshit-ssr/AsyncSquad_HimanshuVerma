@@ -18,13 +18,8 @@ export default function LoginPage() {
     setError("");
     const result = await login(form.email, form.password);
     if (result.error) { setError(result.error); return; }
-    router.push("/buyer");
-  };
-
-  const fillDemo = (role: "buyer" | "seller" | "admin") => {
-    const map = { buyer: "buyer@demo.com", seller: "seller@demo.com", admin: "admin@demo.com" };
-    setForm({ email: map[role], password: "demo123" });
-    setError("");
+    const dest = result.role === "seller" ? "/seller" : result.role === "admin" ? "/admin" : "/buyer";
+    router.push(dest);
   };
 
   return (
@@ -36,17 +31,6 @@ export default function LoginPage() {
           </div>
           <h1 className="font-serif text-3xl font-bold" style={{ color: "#1C1208" }}>Welcome back</h1>
           <p className="mt-2 text-sm" style={{ color: "#6B5747" }}>Sign in to your EcoMarket account</p>
-        </div>
-
-        <div className="card p-4 mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#9E8B7D" }}>Try a demo account</p>
-          <div className="grid grid-cols-3 gap-2">
-            {(["buyer", "seller", "admin"] as const).map((role) => (
-              <button key={role} onClick={() => fillDemo(role)} className="text-xs font-semibold py-2 rounded-lg hover:opacity-80 transition capitalize" style={{ backgroundColor: role === "buyer" ? "#E8F5E3" : role === "seller" ? "#FBE9E2" : "#EDE9E3", color: role === "buyer" ? "#2A5F1E" : role === "seller" ? "#B85C38" : "#6B5747" }}>
-                {role}
-              </button>
-            ))}
-          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="card p-8 space-y-5">
